@@ -432,16 +432,19 @@ class CPU:
         print(self.memory)
 
 
-vf_reset = True
-memory_i_inc = True
+vf_reset = False
+memory_i_inc = False
 
 cpu = CPU(vf_reset, memory_i_inc)
-cpu.load_rom('tests/5-quirks.ch8')
+cpu.load_rom('TETRIS')
 
 clock = pygame.time.Clock()
 
 sound = pygame.mixer.Sound('beep.mp3')
 playing_sound = False
+
+decrement_timers_timer = 1
+decrement_timers = 8
 
 while cpu.run:
     for event in pygame.event.get():
@@ -463,17 +466,22 @@ while cpu.run:
 
     clock.tick(500)
 
-    if cpu.DT > 0:
-        cpu.DT -= 1
-    if cpu.ST > 0:
-        if not playing_sound:
-            sound.play(-1)
-            playing_sound = True
+    if decrement_timers_timer >= decrement_timers:
+        if cpu.DT > 0:
+            cpu.DT -= 1
+        if cpu.ST > 0:
+            if not playing_sound:
+                sound.play(-1)
+                playing_sound = True
 
-        cpu.ST -= 1
+            cpu.ST -= 1
+
+        else:
+            if playing_sound:
+                sound.stop()
+                playing_sound = False
+        decrement_timers_timer = 1
     else:
-        if playing_sound:
-            sound.stop()
-            playing_sound = False
+        decrement_timers_timer += 1
 
 
