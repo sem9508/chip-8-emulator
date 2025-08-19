@@ -440,7 +440,7 @@ cpu.load_rom('tests/5-quirks.ch8')
 
 clock = pygame.time.Clock()
 
-sound = pygame.mixer.Sound('bleep-censorship-sound-wav-74691.mp3')
+sound = pygame.mixer.Sound('beep.mp3')
 playing_sound = False
 
 while cpu.run:
