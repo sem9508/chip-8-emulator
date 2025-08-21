@@ -2,15 +2,18 @@ import time
 import pygame
 import random
 
-pygame.init()
-pygame.mixer.init()
+emu_width, emu_height, emu_scale = 64, 32, 10
 
 class VideoSystem:
-    def __init__(self, width, height, scale):
+    def __init__(self, width, height, scale, screen):
         self.width, self.height = width, height
         self.screen_width, self.screen_height = self.width*scale, self.height*scale
         self.scale = scale
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+
+        if screen == None:
+            self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+        else:
+            self.screen = screen
 
         self.pixels = [[0 for _ in range(width)] for _ in range(height)]
 
@@ -20,11 +23,18 @@ class VideoSystem:
         pygame.display.flip()
 
 class CPU:
-    def __init__(self, vf_reset, memory_i_inc, clipping, shifting, jumping):
+    def __init__(self, vf_reset, memory_i_inc, clipping, shifting, jumping, screen):
         self.run = True
         self.memory = [0] * 4096
         self.start_address = 0x200
         self.rom_size = None
+
+        self.decrement_timers_timer = 1
+        self.decrement_timers = 8
+
+        self.playing_sound = False
+        self.sound = pygame.mixer.Sound('beep.mp3')
+
 
         self.theme = 'retro blue'
 
@@ -113,7 +123,7 @@ class CPU:
 
         self.skip_next_instruction = False
 
-        self.videosystem = VideoSystem(64, 32, 10)
+        self.videosystem = VideoSystem(emu_width, emu_height, emu_scale, screen)
         self.videosystem.clear(self.base_color)
 
         self.V = [0]*16
@@ -389,7 +399,7 @@ class CPU:
         # STARTING WITH B
         elif opcode & 0xF000 == 0xB000:
             # print(f'jumps to the address {hex(opcode&0x0FFF)} plus V0')
-            if jumping:
+            if self.jumping:
                 x = (self.get_nnn(opcode) & 0xF00) >> 8
                 self.PC = self.get_nnn(opcode) + self.V[x]
             else:
@@ -414,13 +424,13 @@ class CPU:
         # STARTING WITH E
         elif opcode & 0xF0FF == 0xE09E:
             #print('Skips the next instruction if the key stored in VX is pressed. (Usually the next instruction is a jump to skip a code block);')
-            if self.V[self.get_x(opcode)] in cpu.get_pressed_chip8_keys():
+            if self.V[self.get_x(opcode)] in self.get_pressed_chip8_keys():
                 self.skip_next_instruction = True
             self.increment_pc()
 
         elif opcode & 0xF0FF == 0xE0A1:
             #print('Skips the next instruction if the key stored in VX is not pressed. (Usually the next instruction is a jump to skip a code block);')
-            if self.V[self.get_x(opcode)] not in cpu.get_pressed_chip8_keys():
+            if self.V[self.get_x(opcode)] not in self.get_pressed_chip8_keys():
                 self.skip_next_instruction = True
             self.increment_pc()
 
@@ -440,7 +450,7 @@ class CPU:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         pygame.quit()
-                        cpu.run = False
+                        self.run = False
                         break
 
                     if event.type == pygame.KEYDOWN:
@@ -452,8 +462,8 @@ class CPU:
                     if event.type == pygame.KEYUP and key_pressed:
                         key_released = True
                 
-                if cpu.DT > 0:
-                    cpu.DT -= 1
+                if self.DT > 0:
+                    self.DT -= 1
                 pygame.time.delay(10)
             self.increment_pc()
         elif opcode & 0xF0FF == 0xF015:
@@ -522,68 +532,67 @@ class CPU:
     def print_memory(self):
         print(self.memory)
 
-vf_reset = False
-memory_i_inc = False
-clipping = True
-shifting = True
-jumping = True
+    def main_loop(self, clock):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.run = False
+                
 
-cpu = CPU(vf_reset, memory_i_inc, clipping, shifting, jumping)
+        if self.run:
+            opcode = self.get_opcode()
 
-#cpu.load_rom('tests/1-chip8-logo.ch8')
-#cpu.load_rom('tests/2-ibm-logo.ch8')
-#cpu.load_rom('tests/3-corax+.ch8')
-#cpu.load_rom('tests/4-flags.ch8')
-#cpu.load_rom('tests/5-quirks.ch8')
-#cpu.load_rom('tests/6-keypad.ch8')
-#cpu.load_rom('tests/7-beep.ch8')
-#cpu.load_rom('tests/8-scrolling.ch8')
+            self.execute_opcode(opcode)
 
-cpu.load_rom('games/BRIX')
+            if self.skip_next_instruction:
+                self.increment_pc()
+                self.skip_next_instruction = False
 
-clock = pygame.time.Clock()
+            clock.tick(500)
 
-sound = pygame.mixer.Sound('beep.mp3')
-playing_sound = False
+            if self.decrement_timers_timer >= self.decrement_timers:
+                if self.DT > 0:
+                    self.DT -= 1
+                if self.ST > 0:
+                    if not self.playing_sound:
+                        self.sound.play(-1)
+                        self.playing_sound = True
 
-decrement_timers_timer = 1
-decrement_timers = 8
+                    self.ST -= 1
 
-while cpu.run:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            cpu.run = False
+                else:
+                    if self.playing_sound:
+                        self.sound.stop()
+                        self.playing_sound = False
+                self.decrement_timers_timer = 1
+            else:
+                self.decrement_timers_timer += 1
 
-    if not cpu.run:
-        break
 
-    opcode = cpu.get_opcode()
+if __name__ == '__main__':
+    pygame.init()
+    pygame.mixer.init()
 
-    cpu.execute_opcode(opcode)
+    vf_reset = False
+    memory_i_inc = False
+    clipping = True
+    shifting = True
+    jumping = True
 
-    if cpu.skip_next_instruction:
-        cpu.increment_pc()
-        cpu.skip_next_instruction = False
+    cpu = CPU(vf_reset, memory_i_inc, clipping, shifting, jumping, None)
 
-    clock.tick(500)
+    #cpu.load_rom('tests/1-chip8-logo.ch8')
+    #cpu.load_rom('tests/2-ibm-logo.ch8')
+    #cpu.load_rom('tests/3-corax+.ch8')
+    #cpu.load_rom('tests/4-flags.ch8')
+    #cpu.load_rom('tests/5-quirks.ch8')
+    #cpu.load_rom('tests/6-keypad.ch8')
+    #cpu.load_rom('tests/7-beep.ch8')
+    #cpu.load_rom('tests/8-scrolling.ch8')
 
-    if decrement_timers_timer >= decrement_timers:
-        if cpu.DT > 0:
-            cpu.DT -= 1
-        if cpu.ST > 0:
-            if not playing_sound:
-                sound.play(-1)
-                playing_sound = True
+    cpu.load_rom('games/BRIX')
 
-            cpu.ST -= 1
-
-        else:
-            if playing_sound:
-                sound.stop()
-                playing_sound = False
-        decrement_timers_timer = 1
-    else:
-        decrement_timers_timer += 1
-
+    clock = pygame.time.Clock()
+    while cpu.run:
+        cpu.main_loop(clock)
+    pygame.quit()
 
