@@ -522,7 +522,6 @@ class CPU:
     def print_memory(self):
         print(self.memory)
 
-
 vf_reset = False
 memory_i_inc = False
 clipping = True
@@ -542,8 +541,6 @@ cpu = CPU(vf_reset, memory_i_inc, clipping, shifting, jumping)
 
 cpu.load_rom('games/BRIX')
 
-
-
 clock = pygame.time.Clock()
 
 sound = pygame.mixer.Sound('beep.mp3')
@@ -562,7 +559,6 @@ while cpu.run:
         break
 
     opcode = cpu.get_opcode()
-
 
     cpu.execute_opcode(opcode)
 
