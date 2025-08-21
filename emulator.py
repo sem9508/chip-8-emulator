@@ -449,7 +449,6 @@ class CPU:
             while not key_released:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        pygame.quit()
                         self.run = False
                         break
 
@@ -464,6 +463,9 @@ class CPU:
                 
                 if self.DT > 0:
                     self.DT -= 1
+
+                if self.run == False:
+                    break
                 pygame.time.delay(10)
             self.increment_pc()
         elif opcode & 0xF0FF == 0xF015:
