@@ -8,25 +8,61 @@ pygame.mixer.init()
 class VideoSystem:
     def __init__(self, width, height, scale):
         self.width, self.height = width, height
+        self.screen_width, self.screen_height = self.width*scale, self.height*scale
         self.scale = scale
-        self.screen = pygame.display.set_mode((width*scale, height*scale))
+        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
 
-        self.clear()
 
         
-    def clear(self):
-        self.screen.fill('black')
+    def clear(self, color):
+        self.screen.fill(color)
         pygame.display.flip()
 
 class CPU:
-    def __init__(self, vf_reset, memory_i_inc):
+    def __init__(self, vf_reset, memory_i_inc, clipping):
         self.run = True
         self.memory = [0] * 4096
         self.start_address = 0x200
         self.rom_size = None
 
+        self.theme = 'retro blue'
+
+        if self.theme == 'purple/pink':
+            self.base_color = (15, 0, 20)
+            self.draw_color = (255, 0, 180)
+
+        if self.theme == 'retro blue':
+            self.base_color = (10, 10, 40)
+            self.draw_color = (0, 255, 220)
+
+        if self.theme == 'orange':
+            self.base_color = (25, 25, 25)
+            self.draw_color = (255, 165, 0)
+
+        if self.theme == 'green/cyan':
+            self.base_color = (0, 20, 0)
+            self.draw_color = (0, 255, 180)
+
+        if self.theme == 'red/white':
+            self.base_color = (30, 0, 0)
+            self.draw_color = (255, 200, 200)
+
+        if self.theme == 'dark grey/teal':
+            self.base_color = (20, 20, 20)
+            self.draw_color = (0, 200, 200)
+
+        if self.theme == 'midnight blue/orange':
+            self.base_color = (10, 10, 35)
+            self.draw_color = (255, 140, 0)
+
+        if self.theme == 'black/lime':
+            self.base_color = (0, 0, 0)
+            self.draw_color = (150, 255, 0)
+
+
         self.vf_reset = vf_reset
-        self.memory_i_inc = memory_i_inc        
+        self.memory_i_inc = memory_i_inc
+        self.clipping = clipping 
 
         self.fontset = [
             0xF0, 0x90, 0x90, 0x90, 0xF0,
@@ -122,35 +158,51 @@ class CPU:
         self.V[index] = self._mask8(self.V[index])
     
     def draw_sprite(self, x, y, height):
+        sprite_in_world_x = self.videosystem.scale*x
+        sprite_in_world_y = self.videosystem.scale*y
+
+        if self.clipping:
+            while sprite_in_world_x >= self.videosystem.screen_width:
+                sprite_in_world_x -= self.videosystem.screen_width
+            while sprite_in_world_y >= self.videosystem.screen_height:
+                sprite_in_world_y -= self.videosystem.screen_height
+            
         self.V[0xF] = 0
         for sprite_y in range(height):
             pixel_row = format(self.memory[self.I+sprite_y], '08b')
             for sprite_x in range(self.sprite_width):
                 if int(pixel_row[sprite_x]) == 1:
-                    pixel_pos_x = self.videosystem.scale*x+self.videosystem.scale*sprite_x
-                    pixel_pos_y = self.videosystem.scale*y+self.videosystem.scale*sprite_y
 
-                    while pixel_pos_x >= self.videosystem.scale*self.videosystem.width:
-                        pixel_pos_x -= self.videosystem.scale*self.videosystem.width
+                    pixel_pos_x = sprite_in_world_x+self.videosystem.scale*sprite_x
+                    pixel_pos_y = sprite_in_world_y+self.videosystem.scale*sprite_y
 
-                    while pixel_pos_y >= self.videosystem.scale*self.videosystem.height:
-                        pixel_pos_y -= self.videosystem.scale*self.videosystem.height
+                    if self.clipping:
+                        if pixel_pos_x >= self.videosystem.screen_width:
+                            continue
+                        if pixel_pos_y >= self.videosystem.screen_height:
+                            continue
 
-                    if self.videosystem.screen.get_at((pixel_pos_x, pixel_pos_y)) == (0, 0, 0, 255):
-                        pygame.draw.rect(self.videosystem.screen, 'white', (pixel_pos_x, pixel_pos_y, self.videosystem.scale, self.videosystem.scale))
                     else:
-                        pygame.draw.rect(self.videosystem.screen, 'black', (pixel_pos_x, pixel_pos_y, self.videosystem.scale, self.videosystem.scale))
+                        while pixel_pos_x >= self.videosystem.screen_width:
+                            pixel_pos_x -= self.videosystem.screen_width
+
+                        while pixel_pos_y >= self.videosystem.screen_height:
+                            pixel_pos_y -= self.videosystem.screen_height
+
+                    if self.videosystem.screen.get_at((pixel_pos_x, pixel_pos_y)) == (self.base_color[0],self.base_color[1], self.base_color[2], 255):
+                        pygame.draw.rect(self.videosystem.screen, self.draw_color, (pixel_pos_x, pixel_pos_y, self.videosystem.scale, self.videosystem.scale))
+                    else:
+                        pygame.draw.rect(self.videosystem.screen, self.base_color, (pixel_pos_x, pixel_pos_y, self.videosystem.scale, self.videosystem.scale))
                         self.V[0xF] = 1
         pygame.display.update()
-
-       
+  
     def execute_opcode(self, opcode):
         # STARTING WITH 0
         if opcode == 0x0000:
             self.increment_pc()
         elif opcode == 0x00E0:
             # print('clear screen')
-            self.videosystem.clear()
+            self.videosystem.clear(self.base_color)
             self.increment_pc()
         elif opcode == 0x00EE:
             # print('returns form a subroutine')
@@ -301,7 +353,11 @@ class CPU:
         # STARTING WITH B
         elif opcode & 0xF000 == 0xB000:
             # print(f'jumps to the address {hex(opcode&0x0FFF)} plus V0')
-            self.PC = self.get_nnn(opcode) + self.V[0]
+            if jumping:
+                x = (self.get_nnn(opcode) & 0xF00) >> 8
+                self.PC = self.get_nnn(opcode) + self.V[x]
+            else:
+                self.PC = self.get_nnn(opcode) + self.V[0]
         
         # STARTING WITH C
         elif opcode & 0xF000 == 0xC000:
@@ -315,7 +371,6 @@ class CPU:
             # print('Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels. Each row of 8 pixels is read as bit-coded starting from memory location I; I value does not change after the execution of this instruction. As described above, VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen')
             x = self.V[self.get_x(opcode)]
             y = self.V[self.get_y(opcode)]
-
             n = self.get_n(opcode)
             self.draw_sprite(x, y, n)
             self.increment_pc()
@@ -434,9 +489,12 @@ class CPU:
 
 vf_reset = False
 memory_i_inc = False
+clipping = False
+#shifting = False
+jumping = False
 
-cpu = CPU(vf_reset, memory_i_inc)
-cpu.load_rom('GAMES/PONG')
+cpu = CPU(vf_reset, memory_i_inc, clipping)
+cpu.load_rom('games/TETRIS')
 
 clock = pygame.time.Clock()
 
